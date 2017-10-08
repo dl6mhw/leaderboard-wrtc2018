@@ -1,22 +1,22 @@
 <?php
 /*
-   PHP Packet Sniffer
-   Copyright 2006, David Eder
-*/
-
-/*
-Example:
+   PHP Packet Sniffer based on David Eder 2006
+   Test sniffing, filtering for leaderboard 
+   RaspberryPi - Rasbian Stretch
+    - listen UDP-Broadcast
+    - print to STDOUT
+    - start: sudo php mhwsniffer.php > /tmp/udp.log 
+   DL6MHW - Oct 2017 
 */
   define('SOL_ICMP', 1);
 
+  #Sniffer status only contains a sequence number to reduce sync later
   include "sniffer_status.php";
 
   $sniffer = new sniffer($last_seq_nr);
   $sniffer->add_protocol(SOL_UDP, 'print_r');
   $sniffer->listen();
-
-
-  
+ 
   if(!defined('SOL_ICMP')) define('SOL_ICMP', 1);
   class sniffer
   {
@@ -69,6 +69,7 @@ Example:
     function decode($packet)
     {
       // decode ip header
+      # MHW: this ist the original code analyzing the ip header
       $ip['version'] = ord($packet{0}) >> 4;
       $ip['ihl'] = ord($packet{0}) & 0xf;
       $ip['tos'] = ord($packet{1});
@@ -84,9 +85,11 @@ Example:
       $ip['dest'] = ord($packet{16}) . '.' . ord($packet{17}) . '.' . ord($packet{18}) . '.' . ord($packet{19});
       $payload = substr($packet, $ip['ihl'] << 2);
 
+      # MHW: here all other (not UDP) protocols are removed 
       switch($ip['protocol'])
       {
         case SOL_UDP:
+          # MHW: this is the original code analyzing udp header
           $ip['udp']['src_port'] = (ord($payload{0}) << 8) + ord($payload{1});
           $ip['udp']['dst_port'] = (ord($payload{2}) << 8) + ord($payload{3});
           $ip['udp']['length'] = (ord($payload{4}) << 8) + ord($payload{5});
@@ -94,7 +97,16 @@ Example:
           $z = getservbyport($ip['udp']['src_port'], 'udp');
           if(!$z) getservbyport($ip['udp']['dst_port'], 'udp');
           if(!$z) $z = 'unknown';
-          if ($ip['udp']['src_port']=='9871') {          
+          # MHW: if port ist 9871 (Wintest default broadcast) and specific package 
+          # (Wintest only) write package to STDOUT
+          if ($ip['udp']['src_port']=='9871' and (
+            # real QSOs - most important
+            preg_match('/ADDQSO:/',substr($payload, 8)) or
+            # QSO Update  
+            preg_match('/UPDQSO:/',substr($payload, 8)) or
+            # to generate testdata packet spots (wtdxtelnet) simulate QSO 
+            preg_match('/RCVDPKT:/',substr($payload, 8))  
+          )) {          
             print "[".($this->seq_nr++).":".time()."]".substr($payload, 8)."\n";
             /*
  		        $ip['udp'][$z] = "\n" . $this->hexdump(substr($payload, 8));
@@ -109,6 +121,7 @@ Example:
       }
     }
 
+    # MHW: not used
     function full_sniffer($callback)
     {
       foreach(file('/etc/protocols') as $line)
@@ -123,6 +136,7 @@ Example:
       }
     }
 
+    # MHW: nice original code, helful for reengineering 
     function hexdump($data)
     {
       $ret = '';
